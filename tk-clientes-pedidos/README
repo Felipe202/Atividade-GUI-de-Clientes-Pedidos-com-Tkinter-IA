@@ -1,0 +1,19 @@
+# Tk - Clientes & Pedidos
+
+Aplicativo didático em Python (Tkinter + SQLite) para gerenciar clientes e pedidos.
+
+## Estrutura
+- main.py
+- db.py
+- models.py
+- views/
+  - clientes_view.py
+  - pedidos_view.py
+- utils.py
+
+## Execução
+`python main.py` — banco `clientes_pedidos.db` criado automaticamente.
+
+## Uso de IA
+- Permitido gerar/explicar trechos; sempre testar e comentar.
+- Documente no README os prompts usados e as mudanças aceitas.
