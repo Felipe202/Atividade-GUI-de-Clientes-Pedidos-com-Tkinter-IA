@@ -1,12 +1,13 @@
 # views/reports_view.py
-import sys, os
+import sys, os, csv
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from tkinter import messagebox, filedialog
-import csv
 from db import list_clientes, list_produtos, list_pedidos
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
 
 
 class ReportsView(ttk.Frame):
@@ -40,6 +41,7 @@ class ReportsView(ttk.Frame):
 
         ttk.Button(frame_top, text="Gerar", bootstyle="info-outline", command=self.gerar_relatorio).pack(side=LEFT)
         ttk.Button(frame_top, text="Exportar CSV", bootstyle="success-outline", command=self.exportar_csv).pack(side=LEFT, padx=(10, 0))
+        ttk.Button(frame_top, text="Exportar PDF", bootstyle="danger-outline", command=self.exportar_pdf).pack(side=LEFT, padx=(10, 0))
 
         # Treeview para mostrar os dados
         self.tree = ttk.Treeview(self, show="headings", bootstyle="dark", height=18)
@@ -52,22 +54,17 @@ class ReportsView(ttk.Frame):
 
         if tipo == "Clientes":
             self.tree["columns"] = ("id", "nome", "email", "telefone")
-            for col in self.tree["columns"]:
-                self.tree.heading(col, text=col.capitalize())
-                self.tree.column(col, width=150)
             dados = list_clientes()
         elif tipo == "Produtos":
             self.tree["columns"] = ("id", "nome", "preco", "estoque")
-            for col in self.tree["columns"]:
-                self.tree.heading(col, text=col.capitalize())
-                self.tree.column(col, width=150)
             dados = list_produtos()
         else:  # Pedidos
             self.tree["columns"] = ("id", "cliente_id", "data", "total")
-            for col in self.tree["columns"]:
-                self.tree.heading(col, text=col.capitalize())
-                self.tree.column(col, width=150)
             dados = list_pedidos()
+
+        for col in self.tree["columns"]:
+            self.tree.heading(col, text=col.capitalize())
+            self.tree.column(col, width=150)
 
         for row in dados:
             self.tree.insert("", "end", values=row)
@@ -97,3 +94,51 @@ class ReportsView(ttk.Frame):
             messagebox.showinfo("Sucesso", f"Relatório exportado para:\n{arquivo}")
         except Exception as e:
             messagebox.showerror("Erro", f"Falha ao exportar: {e}")
+
+    def exportar_pdf(self):
+        tipo = self.combo_tipo.get()
+        dados = [self.tree.item(item)["values"] for item in self.tree.get_children()]
+        colunas = self.tree["columns"]
+
+        if not dados:
+            messagebox.showwarning("Aviso", "Gere um relatório antes de exportar.")
+            return
+
+        arquivo = filedialog.asksaveasfilename(
+            defaultextension=".pdf",
+            filetypes=[("Arquivo PDF", "*.pdf")],
+            title="Salvar Relatório PDF"
+        )
+        if not arquivo:
+            return
+
+        try:
+            c = canvas.Canvas(arquivo, pagesize=A4)
+            largura, altura = A4
+            y = altura - 80
+
+            # Cabeçalho
+            c.setFont("Helvetica-Bold", 16)
+            c.drawString(200, altura - 50, f"Relatório de {tipo}")
+
+            # Colunas
+            c.setFont("Helvetica-Bold", 10)
+            x_inicial = 50
+            for i, col in enumerate(colunas):
+                c.drawString(x_inicial + i * 120, y, col.capitalize())
+
+            # Linhas
+            y -= 20
+            c.setFont("Helvetica", 10)
+            for row in dados:
+                for i, valor in enumerate(row):
+                    c.drawString(x_inicial + i * 120, y, str(valor))
+                y -= 15
+                if y < 50:
+                    c.showPage()
+                    y = altura - 80
+
+            c.save()
+            messagebox.showinfo("Sucesso", f"PDF exportado para:\n{arquivo}")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Falha ao exportar PDF: {e}")
