@@ -1,147 +1,210 @@
 import sqlite3
-from contextlib import closing
-import logging
 
-DB_NAME = "clientes_pedidos.db"
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+DB_NAME = "app.db"
 
-def get_conn():
+# --------------------------------------------------
+# CONEXÃO
+# --------------------------------------------------
+def conectar():
     return sqlite3.connect(DB_NAME)
 
-def init_db():
-    with closing(get_conn()) as conn:
-        cur = conn.cursor()
-        cur.executescript("""
-        CREATE TABLE IF NOT EXISTS clientes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome TEXT NOT NULL,
-            email TEXT,
-            telefone TEXT
-        );
 
-        CREATE TABLE IF NOT EXISTS pedidos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            cliente_id INTEGER NOT NULL,
-            data TEXT NOT NULL,
-            total REAL NOT NULL,
-            FOREIGN KEY (cliente_id) REFERENCES clientes(id)
-        );
+# --------------------------------------------------
+# CRIAÇÃO DAS TABELAS
+# --------------------------------------------------
+def create_tables():
+    conn = conectar()
+    cur = conn.cursor()
 
-        CREATE TABLE IF NOT EXISTS itens_pedido (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            pedido_id INTEGER NOT NULL,
-            produto TEXT NOT NULL,
-            quantidade INTEGER NOT NULL,
-            preco_unit REAL NOT NULL,
-            FOREIGN KEY (pedido_id) REFERENCES pedidos(id)
-        );
-
-        CREATE TABLE IF NOT EXISTS produtos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome TEXT NOT NULL,
-            preco REAL NOT NULL,
-            estoque INTEGER DEFAULT 0
-        );
-        """)
-        conn.commit()
-    logging.info("Banco inicializado")
-
-def execute(query, params=()):
-    try:
-        with closing(get_conn()) as conn:
-            cur = conn.cursor()
-            cur.execute(query, params)
-            conn.commit()
-            return cur.lastrowid
-    except Exception as e:
-        logging.exception("Erro no DB execute")
-        raise
-
-def fetchall(query, params=()):
-    with closing(get_conn()) as conn:
-        cur = conn.cursor()
-        cur.execute(query, params)
-        return cur.fetchall()
-
-def fetchone(query, params=()):
-    with closing(get_conn()) as conn:
-        cur = conn.cursor()
-        cur.execute(query, params)
-        return cur.fetchone()
-
-# Clientes
-def insert_cliente(nome, email, telefone):
-    return execute("INSERT INTO clientes (nome,email,telefone) VALUES (?,?,?)", (nome,email,telefone))
-
-def update_cliente(cliente_id, nome, email, telefone):
-    execute("UPDATE clientes SET nome=?, email=?, telefone=? WHERE id=?", (nome,email,telefone,cliente_id))
-
-def delete_cliente(cliente_id):
-    execute("DELETE FROM clientes WHERE id=?", (cliente_id,))
-
-def list_clientes(filter_text=""):
-    if filter_text:
-        term = f"%{filter_text}%"
-        return fetchall("SELECT id,nome,email,telefone FROM clientes WHERE nome LIKE ? OR email LIKE ? ORDER BY nome", (term,term))
-    return fetchall("SELECT id,nome,email,telefone FROM clientes ORDER BY nome")
-
-# Pedidos
-def insert_pedido_with_items(cliente_id, data, total, items):
-    try:
-        conn = get_conn()
-        cur = conn.cursor()
-        cur.execute("BEGIN")
-        cur.execute("INSERT INTO pedidos (cliente_id,data,total) VALUES (?,?,?)", (cliente_id,data,total))
-        pedido_id = cur.lastrowid
-        for produto, quantidade, preco_unit in items:
-            cur.execute("INSERT INTO itens_pedido (pedido_id,produto,quantidade,preco_unit) VALUES (?,?,?,?)",
-                        (pedido_id,produto,quantidade,preco_unit))
-        conn.commit()
-        return pedido_id
-    except Exception:
-        conn.rollback()
-        logging.exception("Falha ao salvar pedido")
-        raise
-    finally:
-        conn.close()
-
-def list_pedidos():
-    return fetchall("""
-    SELECT p.id,p.cliente_id,c.nome,p.data,p.total
-    FROM pedidos p JOIN clientes c ON c.id = p.cliente_id
-    ORDER BY p.data DESC
+    # Clientes
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS clientes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nome TEXT NOT NULL,
+        email TEXT,
+        telefone TEXT
+    );
     """)
 
-def get_itens_pedido(pedido_id):
-    return fetchall("SELECT id,produto,quantidade,preco_unit FROM itens_pedido WHERE pedido_id=?", (pedido_id,))
+    # Produtos (com campo estoque)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS produtos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nome TEXT NOT NULL,
+        preco REAL NOT NULL,
+        estoque INTEGER DEFAULT 0
+    );
+    """)
 
-def delete_pedido(pedido_id):
-    try:
-        conn = get_conn()
-        cur = conn.cursor()
-        cur.execute("BEGIN")
-        cur.execute("DELETE FROM itens_pedido WHERE pedido_id=?", (pedido_id,))
-        cur.execute("DELETE FROM pedidos WHERE id=?", (pedido_id,))
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        logging.exception("Falha ao deletar pedido")
-        raise
-    finally:
-        conn.close()
+    # Pedidos
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pedidos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cliente_id INTEGER NOT NULL,
+        data TEXT NOT NULL,
+        total REAL NOT NULL,
+        FOREIGN KEY (cliente_id) REFERENCES clientes(id)
+    );
+    """)
 
-# Produtos
+    # Itens do pedido
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS itens_pedido (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pedido_id INTEGER NOT NULL,
+        produto TEXT NOT NULL,
+        quantidade REAL NOT NULL,
+        preco_unit REAL NOT NULL,
+        subtotal REAL NOT NULL,
+        FOREIGN KEY (pedido_id) REFERENCES pedidos(id)
+    );
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+# --------------------------------------------------
+# CLIENTES
+# --------------------------------------------------
+def list_clientes():
+    conn = conectar()
+    cur = conn.cursor()
+    cur.execute("SELECT id, nome, email, telefone FROM clientes ORDER BY nome")
+    data = cur.fetchall()
+    conn.close()
+    return data
+
+
+def insert_cliente(nome, email, telefone):
+    conn = conectar()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO clientes (nome, email, telefone) VALUES (?, ?, ?)", (nome, email, telefone))
+    conn.commit()
+    conn.close()
+
+
+def update_cliente(id_cliente, nome, email, telefone):
+    conn = conectar()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE clientes
+        SET nome = ?, email = ?, telefone = ?
+        WHERE id = ?
+    """, (nome, email, telefone, id_cliente))
+    conn.commit()
+    conn.close()
+
+
+def delete_cliente(id_cliente):
+    conn = conectar()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM clientes WHERE id = ?", (id_cliente,))
+    conn.commit()
+    conn.close()
+
+
+# --------------------------------------------------
+# PRODUTOS
+# --------------------------------------------------
 def insert_produto(nome, preco, estoque):
-    return execute("INSERT INTO produtos (nome, preco, estoque) VALUES (?,?,?)", (nome, preco, estoque))
+    conn = conectar()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO produtos (nome, preco, estoque) VALUES (?, ?, ?)", (nome, preco, estoque))
+    conn.commit()
+    conn.close()
 
-def update_produto(produto_id, nome, preco, estoque):
-    execute("UPDATE produtos SET nome=?, preco=?, estoque=? WHERE id=?", (nome, preco, estoque, produto_id))
 
-def delete_produto(produto_id):
-    execute("DELETE FROM produtos WHERE id=?", (produto_id,))
+def list_produtos(*args):
+    conn = conectar()
+    cur = conn.cursor()
+    cur.execute("SELECT id, nome, preco, estoque FROM produtos ORDER BY nome")
+    rows = cur.fetchall()
+    conn.close()
+    return rows
 
-def list_produtos(filter_text=""):
-    if filter_text:
-        term = f"%{filter_text}%"
-        return fetchall("SELECT id,nome,preco,estoque FROM produtos WHERE nome LIKE ? ORDER BY nome", (term,))
-    return fetchall("SELECT id,nome,preco,estoque FROM produtos ORDER BY nome")
+
+def update_produto(id_produto, nome, preco, estoque):
+    conn = conectar()
+    cur = conn.cursor()
+    cur.execute("UPDATE produtos SET nome = ?, preco = ?, estoque = ? WHERE id = ?", (nome, preco, estoque, id_produto))
+    conn.commit()
+    conn.close()
+
+
+def delete_produto(id_produto):
+    conn = conectar()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM produtos WHERE id = ?", (id_produto,))
+    conn.commit()
+    conn.close()
+
+
+def get_produto(id_produto):
+    conn = conectar()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM produtos WHERE id = ?", (id_produto,))
+    produto = cur.fetchone()
+    conn.close()
+    return produto
+
+
+# --------------------------------------------------
+# PEDIDOS
+# --------------------------------------------------
+def insert_pedido(cliente_nome, data, total):
+    conn = conectar()
+    cur = conn.cursor()
+
+    # Busca o ID do cliente pelo nome
+    cur.execute("SELECT id FROM clientes WHERE nome = ?", (cliente_nome,))
+    cliente = cur.fetchone()
+    if not cliente:
+        raise Exception("Cliente não encontrado.")
+    cliente_id = cliente[0]
+
+    cur.execute("INSERT INTO pedidos (cliente_id, data, total) VALUES (?, ?, ?)", (cliente_id, data, total))
+    pedido_id = cur.lastrowid
+
+    conn.commit()
+    conn.close()
+    return pedido_id
+
+
+def insert_item_pedido(pedido_id, produto, quantidade, preco_unit):
+    subtotal = float(quantidade) * float(preco_unit)
+    conn = conectar()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO itens_pedido (pedido_id, produto, quantidade, preco_unit, subtotal)
+        VALUES (?, ?, ?, ?, ?)
+    """, (pedido_id, produto, quantidade, preco_unit, subtotal))
+    conn.commit()
+    conn.close()
+
+
+def list_pedidos():
+    conn = conectar()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT p.id, c.nome AS cliente, p.data, p.total
+        FROM pedidos p
+        JOIN clientes c ON c.id = p.cliente_id
+        ORDER BY p.id DESC
+    """)
+    data = cur.fetchall()
+    conn.close()
+    return data
+
+
+def get_itens_pedido(pedido_id):
+    conn = conectar()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT produto, quantidade, preco_unit, subtotal
+        FROM itens_pedido
+        WHERE pedido_id = ?
+    """, (pedido_id,))
+    data = cur.fetchall()
+    conn.close()
+    return data

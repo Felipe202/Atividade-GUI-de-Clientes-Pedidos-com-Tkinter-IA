@@ -1,168 +1,174 @@
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import tkinter as tk
-from tkinter import ttk, messagebox
-from db import list_clientes, insert_pedido_with_items, list_pedidos, get_itens_pedido, delete_pedido
+import ttkbootstrap as ttk
+from tkinter import messagebox
+from datetime import date
+from db import list_clientes, insert_pedido, insert_item_pedido, list_pedidos, get_itens_pedido
 
-class PedidosView(ttk.Frame):
+
+class PedidosView(ttk.Toplevel):
     def __init__(self, master):
         super().__init__(master)
-        self.pack(fill="both", expand=True)
-        self.create_widgets()
-        self.load_pedidos()
+        self.title("Gerenciar Pedidos")
+        self.geometry("900x600")
+        self.resizable(False, False)
 
-    def create_widgets(self):
-        top = ttk.Frame(self)
-        top.pack(fill="x", pady=6, padx=6)
-        ttk.Label(top, text="Buscar Cliente:").pack(side="left")
-        self.search_var = tk.StringVar()
-        ttk.Entry(top, textvariable=self.search_var).pack(side="left", padx=5)
-        ttk.Button(top, text="Buscar", command=self.load_pedidos).pack(side="left", padx=5)
-        ttk.Button(top, text="Novo Pedido", command=self.on_new).pack(side="right", padx=5)
+        ttk.Label(self, text="Pedidos", font=("Segoe UI", 16, "bold")).pack(pady=10)
 
-        columns = ("id","cliente_id","cliente","data","total")
-        self.tree = ttk.Treeview(self, columns=columns, show="headings")
-        for col in columns:
-            self.tree.heading(col, text=col.title())
-        self.tree.column("id", width=40, anchor="center")
-        self.tree.pack(fill="both", expand=True, padx=6, pady=6)
+        frame_top = ttk.Frame(self, padding=10)
+        frame_top.pack(fill="x")
 
-        btns = ttk.Frame(self)
-        btns.pack(fill="x", padx=6, pady=(0,6))
-        ttk.Button(btns, text="Ver Itens", command=self.on_view_items).pack(side="left")
-        ttk.Button(btns, text="Excluir", command=self.on_delete).pack(side="left", padx=5)
+        ttk.Button(frame_top, text="Novo Pedido", bootstyle="success", command=self.novo_pedido).pack(side="left", padx=5)
+        ttk.Button(frame_top, text="Atualizar Lista", bootstyle="info", command=self.carregar_pedidos).pack(side="left", padx=5)
+        ttk.Button(frame_top, text="Fechar", bootstyle="secondary", command=self.destroy).pack(side="right", padx=5)
 
-    def load_pedidos(self):
-        for r in self.tree.get_children():
-            self.tree.delete(r)
-        q = self.search_var.get().strip()
-        rows = list_pedidos()
-        if q:
-            rows = [r for r in rows if q.lower() in r[2].lower()]
-        for r in rows:
-            self.tree.insert("", "end", values=r)
+        colunas = ("id", "cliente", "data", "total")
+        self.tree = ttk.Treeview(self, columns=colunas, show="headings", bootstyle="dark")
+        for col in colunas:
+            self.tree.heading(col, text=col.capitalize())
+            self.tree.column(col, width=200, anchor="center")
 
-    def get_selected_id(self):
-        sel = self.tree.selection()
-        if not sel:
-            messagebox.showinfo("Aviso","Selecione um pedido")
-            return None
-        return int(self.tree.item(sel[0])["values"][0])
+        scroll = ttk.Scrollbar(self, command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scroll.set)
+        self.tree.pack(fill="both", expand=True, pady=10, padx=10)
+        scroll.pack(side="right", fill="y")
 
-    def on_new(self):
-        PedidoForm(self, "novo")
+        self.carregar_pedidos()
 
-    def on_view_items(self):
-        pid = self.get_selected_id()
-        if pid:
-            itens = get_itens_pedido(pid)
-            msg = "\n".join([f"{i[1]} | Qtd: {i[2]} | R$: {i[3]:.2f}" for i in itens])
-            messagebox.showinfo("Itens do Pedido", msg if msg else "Sem itens")
+    def carregar_pedidos(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        for p in list_pedidos():
+            self.tree.insert("", "end", values=p)
 
-    def on_delete(self):
-        pid = self.get_selected_id()
-        if pid and messagebox.askyesno("Confirmar", "Excluir pedido?"):
-            delete_pedido(pid)
-            self.load_pedidos()
+    def novo_pedido(self):
+        PedidoForm(self, self.carregar_pedidos)
 
-class PedidoForm(tk.Toplevel):
-    def __init__(self, parent, modo):
-        super().__init__(parent)
-        self.parent = parent
-        self.modo = modo
+
+class PedidoForm(ttk.Toplevel):
+    def __init__(self, master, callback):
+        super().__init__(master)
         self.title("Novo Pedido")
-        self.geometry("400x400")
-        self.items = []
-        self.create_form()
+        self.geometry("800x600")
+        self.callback = callback
+        self.total = tk.DoubleVar(value=0.0)
+        self.itens = []
 
-    def create_form(self):
-        pad={"padx":8,"pady":6}
-        tk.Label(self, text="Cliente").grid(row=0,column=0,**pad,sticky="w")
+        # Cliente + Data
+        frame_info = ttk.Frame(self, padding=10)
+        frame_info.pack(fill="x")
+
+        ttk.Label(frame_info, text="Cliente:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         clientes = list_clientes()
-        self.clientes_map = {f"{c[1]}": c[0] for c in clientes}
-        self.cliente_var = tk.StringVar()
-        ttk.Combobox(self, textvariable=self.cliente_var, values=list(self.clientes_map.keys())).grid(row=0,column=1,**pad)
+        self.combo_cliente = ttk.Combobox(frame_info, values=[c[1] for c in clientes], width=40, bootstyle="info")
+        self.combo_cliente.grid(row=0, column=1, padx=5, pady=5)
 
-        tk.Label(self, text="Data").grid(row=1,column=0,**pad,sticky="w")
-        import datetime
-        self.data_var = tk.StringVar(value=datetime.date.today().isoformat())
-        tk.Entry(self, textvariable=self.data_var).grid(row=1,column=1,**pad)
+        ttk.Label(frame_info, text="Data:").grid(row=0, column=2, sticky="w", padx=5, pady=5)
+        self.entry_data = ttk.Entry(frame_info, width=15)
+        self.entry_data.insert(0, date.today().strftime("%Y-%m-%d"))
+        self.entry_data.grid(row=0, column=3, padx=5, pady=5)
 
-        # Tabela de itens
-        tk.Label(self, text="Itens").grid(row=2,column=0,sticky="w", **pad)
-        self.tree = ttk.Treeview(self, columns=("produto","quantidade","preco"), show="headings")
-        for c in ("produto","quantidade","preco"):
-            self.tree.heading(c,text=c.title())
-        self.tree.grid(row=3,column=0,columnspan=2, padx=6, pady=6)
+        # Tabela de Itens
+        frame_itens = ttk.Labelframe(self, text="Itens do Pedido", padding=10, bootstyle="dark")
+        frame_itens.pack(fill="both", expand=True, padx=10, pady=10)
 
-        btns_itens = tk.Frame(self)
-        btns_itens.grid(row=4,column=0,columnspan=2)
-        tk.Button(btns_itens,text="Adicionar Item",command=self.add_item).pack(side="left",padx=5)
-        tk.Button(btns_itens,text="Remover Item",command=self.remove_item).pack(side="left",padx=5)
+        colunas = ("produto", "quantidade", "preco_unit", "subtotal")
+        self.tree_itens = ttk.Treeview(frame_itens, columns=colunas, show="headings", bootstyle="dark")
+        for col in colunas:
+            self.tree_itens.heading(col, text=col.capitalize())
+            self.tree_itens.column(col, width=150, anchor="center")
 
-        # Total
-        tk.Label(self,text="Total").grid(row=5,column=0,sticky="w",**pad)
-        self.total_var = tk.StringVar(value="0.00")
-        tk.Entry(self,textvariable=self.total_var,state="readonly").grid(row=5,column=1,**pad)
+        scroll_itens = ttk.Scrollbar(frame_itens, command=self.tree_itens.yview)
+        self.tree_itens.configure(yscrollcommand=scroll_itens.set)
+        self.tree_itens.pack(side="left", fill="both", expand=True)
+        scroll_itens.pack(side="right", fill="y")
 
-        # Salvar / Cancelar
-        frm_btn = tk.Frame(self)
-        frm_btn.grid(row=6,column=0,columnspan=2,pady=10)
-        tk.Button(frm_btn,text="Salvar",command=self.save).pack(side="left",padx=5)
-        tk.Button(frm_btn,text="Cancelar",command=self.destroy).pack(side="left",padx=5)
+        # Form de item
+        frame_add = ttk.Frame(self, padding=10)
+        frame_add.pack(fill="x")
 
-    def add_item(self):
-        def salvar_item():
-            p = produto_var.get().strip()
-            try:
-                q = int(quant_var.get())
-                preco = float(preco_var.get())
-            except ValueError:
-                messagebox.showerror("Erro","Quantidade ou preço inválido")
-                return
-            self.items.append((p,q,preco))
-            self.tree.insert("", "end", values=(p,q,preco))
-            self.update_total()
-            win.destroy()
+        ttk.Label(frame_add, text="Produto:").grid(row=0, column=0, padx=5, pady=5)
+        self.entry_produto = ttk.Entry(frame_add, width=30)
+        self.entry_produto.grid(row=0, column=1, padx=5, pady=5)
 
-        win = tk.Toplevel(self)
-        win.title("Adicionar Item")
-        tk.Label(win,text="Produto").grid(row=0,column=0,padx=8,pady=6,sticky="w")
-        produto_var = tk.StringVar()
-        tk.Entry(win,textvariable=produto_var).grid(row=0,column=1,padx=8,pady=6)
-        tk.Label(win,text="Quantidade").grid(row=1,column=0,padx=8,pady=6,sticky="w")
-        quant_var = tk.StringVar()
-        tk.Entry(win,textvariable=quant_var).grid(row=1,column=1,padx=8,pady=6)
-        tk.Label(win,text="Preço Unit").grid(row=2,column=0,padx=8,pady=6,sticky="w")
-        preco_var = tk.StringVar()
-        tk.Entry(win,textvariable=preco_var).grid(row=2,column=1,padx=8,pady=6)
-        tk.Button(win,text="Salvar",command=salvar_item).grid(row=3,column=0,columnspan=2,pady=10)
+        ttk.Label(frame_add, text="Qtd:").grid(row=0, column=2, padx=5, pady=5)
+        self.entry_qtd = ttk.Entry(frame_add, width=10)
+        self.entry_qtd.grid(row=0, column=3, padx=5, pady=5)
 
-    def remove_item(self):
-        sel = self.tree.selection()
-        if sel:
-            idx = self.tree.index(sel[0])
-            del self.items[idx]
-            self.tree.delete(sel[0])
-            self.update_total()
+        ttk.Label(frame_add, text="Preço Unit:").grid(row=0, column=4, padx=5, pady=5)
+        self.entry_preco = ttk.Entry(frame_add, width=10)
+        self.entry_preco.grid(row=0, column=5, padx=5, pady=5)
 
-    def update_total(self):
-        total = sum(q*preco for _,q,preco in self.items)
-        self.total_var.set(f"{total:.2f}")
+        ttk.Button(frame_add, text="Adicionar", bootstyle="success", command=self.adicionar_item).grid(row=0, column=6, padx=5)
+        ttk.Button(frame_add, text="Remover Selecionado", bootstyle="danger", command=self.remover_item).grid(row=0, column=7, padx=5)
 
-    def save(self):
-        cliente_nome = self.cliente_var.get().strip()
-        if not cliente_nome or not self.items:
-            messagebox.showerror("Erro","Cliente e pelo menos 1 item são obrigatórios")
+        # Total + Botões
+        frame_bottom = ttk.Frame(self, padding=10)
+        frame_bottom.pack(fill="x")
+
+        ttk.Label(frame_bottom, text="Total: R$", font=("Segoe UI", 12, "bold")).pack(side="left", padx=5)
+        ttk.Label(frame_bottom, textvariable=self.total, font=("Segoe UI", 12, "bold")).pack(side="left")
+
+        ttk.Button(frame_bottom, text="Salvar Pedido", bootstyle="success", command=self.salvar_pedido).pack(side="right", padx=5)
+        ttk.Button(frame_bottom, text="Cancelar", bootstyle="secondary", command=self.destroy).pack(side="right", padx=5)
+
+    def adicionar_item(self):
+        produto = self.entry_produto.get().strip()
+        qtd = self.entry_qtd.get().strip()
+        preco = self.entry_preco.get().strip()
+
+        if not produto or not qtd or not preco:
+            messagebox.showwarning("Atenção", "Preencha todos os campos do item.")
             return
-        cliente_id = self.parent.clientes_map[cliente_nome] if hasattr(self.parent,'clientes_map') else None
-        if cliente_id is None:
-            # Fallback
-            clientes = list_clientes()
-            cliente_map = {c[1]:c[0] for c in clientes}
-            cliente_id = cliente_map.get(cliente_nome)
-        insert_pedido_with_items(cliente_id, self.data_var.get(), float(self.total_var.get()), self.items)
-        self.parent.load_pedidos()
-        self.destroy()
+
+        try:
+            qtd = float(qtd)
+            preco = float(preco)
+        except ValueError:
+            messagebox.showerror("Erro", "Quantidade e preço devem ser números.")
+            return
+
+        subtotal = qtd * preco
+        self.tree_itens.insert("", "end", values=(produto, qtd, preco, subtotal))
+        self.itens.append((produto, qtd, preco))
+        self.atualizar_total()
+
+        self.entry_produto.delete(0, "end")
+        self.entry_qtd.delete(0, "end")
+        self.entry_preco.delete(0, "end")
+
+    def remover_item(self):
+        selecionado = self.tree_itens.selection()
+        if not selecionado:
+            return
+        for s in selecionado:
+            self.tree_itens.delete(s)
+        self.itens = [self.tree_itens.item(i)["values"][:3] for i in self.tree_itens.get_children()]
+        self.atualizar_total()
+
+    def atualizar_total(self):
+        total = 0.0
+        for i in self.tree_itens.get_children():
+            valores = self.tree_itens.item(i)["values"]
+            total += float(valores[3])
+        self.total.set(round(total, 2))
+
+    def salvar_pedido(self):
+        cliente_nome = self.combo_cliente.get().strip()
+        data_pedido = self.entry_data.get().strip()
+
+        if not cliente_nome:
+            messagebox.showerror("Erro", "Selecione um cliente.")
+            return
+        if not self.itens:
+            messagebox.showwarning("Aviso", "Adicione ao menos um item.")
+            return
+
+        try:
+            pedido_id = insert_pedido(cliente_nome, data_pedido, self.total.get())
+            for produto, qtd, preco in self.itens:
+                insert_item_pedido(pedido_id, produto, qtd, preco)
+            messagebox.showinfo("Sucesso", "Pedido salvo com sucesso.")
+            self.callback()
+            self.destroy()
+        except Exception as e:
+            messagebox.showerror("Erro", f"Falha ao salvar pedido: {e}")

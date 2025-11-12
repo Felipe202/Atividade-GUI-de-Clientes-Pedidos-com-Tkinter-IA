@@ -2,114 +2,98 @@
 import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
-from db import list_clientes, list_pedidos, get_itens_pedido
+import ttkbootstrap as ttk
+from ttkbootstrap.constants import *
+from tkinter import messagebox, filedialog
 import csv
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
-import logging
-from utils import log_action
+from db import list_clientes, list_produtos, list_pedidos
 
-logger = logging.getLogger(__name__)
 
-class ReportsFrame(ttk.Frame):
+class ReportsView(ttk.Frame):
     def __init__(self, master):
-        super().__init__(master)
-        self.pack(fill="both", expand=True, padx=8, pady=8)
+        super().__init__(master, padding=20)
+        self.pack(fill=BOTH, expand=True)
         self.create_widgets()
 
     def create_widgets(self):
-        pad={"padx":6,"pady":4}
-        top = ttk.Frame(self)
-        top.pack(fill="x", pady=4)
-        ttk.Label(top, text="Cliente (opcional)").pack(side="left")
-        clientes = list_clientes()
-        self.clientes_map = {c[1]:c[0] for c in clientes}
-        self.cb_cliente = ttk.Combobox(top, values=list(self.clientes_map.keys()), state="readonly")
-        self.cb_cliente.pack(side="left", padx=6)
-        ttk.Button(top, text="Listar", command=self.listar).pack(side="left", padx=6)
+        title = ttk.Label(
+            self,
+            text="📊 Relatórios",
+            font=("Segoe UI", 18, "bold"),
+            bootstyle="inverse-primary",
+        )
+        title.pack(anchor="w", pady=(0, 20))
 
-        self.tree = ttk.Treeview(self, columns=("id","cliente","data","total"), show="headings")
-        for c in ("id","cliente","data","total"):
-            self.tree.heading(c, text=c.title())
-        self.tree.pack(fill="both", expand=True, pady=6)
+        frame_top = ttk.Frame(self)
+        frame_top.pack(fill=X, pady=10)
 
-        btns = ttk.Frame(self)
-        btns.pack(fill="x")
-        ttk.Button(btns, text="Exportar CSV", command=self.export_csv).pack(side="left", padx=6)
-        ttk.Button(btns, text="Exportar PDF", command=self.export_pdf).pack(side="left", padx=6)
+        ttk.Label(frame_top, text="Selecione o tipo de relatório:", font=("Segoe UI", 10)).pack(side=LEFT, padx=(0, 10))
 
-    def listar(self):
-        cliente = self.cb_cliente.get()
-        rows = list_pedidos()
-        if cliente:
-            rows = [r for r in rows if r[2]==cliente]
-        # Show
-        for r in self.tree.get_children(): self.tree.delete(r)
-        for row in rows:
-            pid, cid, nome, data, total = row
-            self.tree.insert("", "end", values=(pid, nome, data, f"{total:.2f}"))
+        self.combo_tipo = ttk.Combobox(
+            frame_top,
+            values=["Clientes", "Produtos", "Pedidos"],
+            state="readonly",
+            width=20,
+        )
+        self.combo_tipo.current(0)
+        self.combo_tipo.pack(side=LEFT, padx=(0, 10))
 
-    def _gather_rows_for_export(self):
-        rows = []
-        for item in self.tree.get_children():
-            vals = self.tree.item(item)["values"]
-            pid = vals[0]
-            itens = get_itens_pedido(pid)
-            # itens: (id, produto, quantidade, preco_unit) -> map to (produto,qtd,preco)
-            itens_clean = [(it[1], it[2], it[3]) for it in itens]
-            rows.append((pid, vals[1], vals[2], vals[3], itens_clean))
-        return rows
+        ttk.Button(frame_top, text="Gerar", bootstyle="info-outline", command=self.gerar_relatorio).pack(side=LEFT)
+        ttk.Button(frame_top, text="Exportar CSV", bootstyle="success-outline", command=self.exportar_csv).pack(side=LEFT, padx=(10, 0))
 
-    def export_csv(self):
-        rows = self._gather_rows_for_export()
-        if not rows:
-            messagebox.showinfo("Exportar CSV","Nenhum pedido para exportar.")
+        # Treeview para mostrar os dados
+        self.tree = ttk.Treeview(self, show="headings", bootstyle="dark", height=18)
+        self.tree.pack(fill=BOTH, expand=True, pady=(15, 0))
+
+    def gerar_relatorio(self):
+        tipo = self.combo_tipo.get()
+        for i in self.tree.get_children():
+            self.tree.delete(i)
+
+        if tipo == "Clientes":
+            self.tree["columns"] = ("id", "nome", "email", "telefone")
+            for col in self.tree["columns"]:
+                self.tree.heading(col, text=col.capitalize())
+                self.tree.column(col, width=150)
+            dados = list_clientes()
+        elif tipo == "Produtos":
+            self.tree["columns"] = ("id", "nome", "preco", "estoque")
+            for col in self.tree["columns"]:
+                self.tree.heading(col, text=col.capitalize())
+                self.tree.column(col, width=150)
+            dados = list_produtos()
+        else:  # Pedidos
+            self.tree["columns"] = ("id", "cliente_id", "data", "total")
+            for col in self.tree["columns"]:
+                self.tree.heading(col, text=col.capitalize())
+                self.tree.column(col, width=150)
+            dados = list_pedidos()
+
+        for row in dados:
+            self.tree.insert("", "end", values=row)
+
+        messagebox.showinfo("Relatório", f"Relatório de {tipo.lower()} gerado com sucesso!")
+
+    def exportar_csv(self):
+        tipo = self.combo_tipo.get()
+        dados = [self.tree.item(item)["values"] for item in self.tree.get_children()]
+        if not dados:
+            messagebox.showwarning("Aviso", "Gere um relatório antes de exportar.")
             return
-        path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files","*.csv")])
-        if not path: return
+
+        arquivo = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("Arquivo CSV", "*.csv")],
+            title="Salvar Relatório"
+        )
+        if not arquivo:
+            return
+
         try:
-            with open(path, "w", newline='', encoding="utf-8") as f:
+            with open(arquivo, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
-                writer.writerow(["pedido_id","cliente","data","total","itens"])
-                for pid, cliente, data, total, itens in rows:
-                    itens_text = "; ".join([f"{p} x{q} R${preco:.2f}" for p,q,preco in itens])
-                    writer.writerow([pid, cliente, data, total, itens_text])
-            log_action("Export", "CSV", note=f"path={path}")
-            messagebox.showinfo("Exportar CSV", f"Exportado: {path}")
+                writer.writerow(self.tree["columns"])
+                writer.writerows(dados)
+            messagebox.showinfo("Sucesso", f"Relatório exportado para:\n{arquivo}")
         except Exception as e:
-            logging.exception("Erro export CSV")
-            messagebox.showerror("Erro", f"Falha ao exportar CSV: {e}")
-
-    def export_pdf(self):
-        rows = self._gather_rows_for_export()
-        if not rows:
-            messagebox.showinfo("Exportar PDF","Nenhum pedido para exportar.")
-            return
-        path = filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF files","*.pdf")])
-        if not path: return
-        try:
-            c = canvas.Canvas(path, pagesize=A4)
-            width, height = A4
-            y = height - 50
-            c.setFont("Helvetica-Bold", 14)
-            c.drawString(50, y, "Relatório de Pedidos")
-            y -= 30
-            c.setFont("Helvetica", 10)
-            for pid, cliente, data, total, itens in rows:
-                if y < 80:
-                    c.showPage()
-                    y = height - 50
-                c.drawString(50, y, f"Pedido {pid} - Cliente: {cliente} - {data} - Total: R$ {total}")
-                y -= 14
-                for p,q,preco in itens:
-                    c.drawString(70, y, f"- {p} | Qtd: {q} | R$ {preco:.2f}")
-                    y -= 12
-                y -= 8
-            c.save()
-            log_action("Export", "PDF", note=f"path={path}")
-            messagebox.showinfo("Exportar PDF", f"PDF gerado: {path}")
-        except Exception as e:
-            logging.exception("Erro export PDF")
-            messagebox.showerror("Erro", f"Falha ao exportar PDF: {e}")
+            messagebox.showerror("Erro", f"Falha ao exportar: {e}")

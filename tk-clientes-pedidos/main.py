@@ -1,109 +1,134 @@
 # main.py
+import os
 import tkinter as tk
-from tkinter import ttk, messagebox
-from db import init_db
-from views.clientes_view import ClientesView
-from views.pedidos_view import PedidosView
-from views.produtos_view import ProdutosFrame
-from views.dashboard_view import DashboardFrame
-from views.reports_view import ReportsFrame
-from views.history_view import HistoryFrame
+import ttkbootstrap as ttk
+from ttkbootstrap import Style
+from tkinter import messagebox
+
+# inicializa DB (garanta que db.init_db exista)
+from db import create_tables as init_db
+
+
+# views (assumindo que os arquivos em views/ estejam com os nomes abaixo)
+from views.dashboard_view import DashboardView
+from views.history_view import HistoryView
+from views.reports_view import ReportsView
 from views.ia_view import IAView
-from utils import log_action
+from views.clientes_view import ClientesView
+from views.produtos_view import ProdutosView
+from views.pedidos_view import PedidosView
 
-def open_window(frame_class, title):
-    w = tk.Toplevel(root)
-    w.title(title)
-    frame_class(w)
+# init DB
+init_db()
 
-def on_closing():
-    if messagebox.askokcancel("Sair", "Deseja sair do aplicativo?"):
-        log_action("Exit", "App")
-        root.destroy()
 
-if __name__ == "__main__":
-    init_db()
-    root = tk.Tk()
-    root.title("Sistema - Clientes, Pedidos, Produtos (Fase 2)")
-    root.geometry("900x600")
+def is_toplevel_class(cls):
+    """Retorna True se cls é subclass de Toplevel (tk or ttk)."""
+    try:
+        mro = getattr(cls, "__mro__", ())
+        return any(base.__name__.lower().endswith("toplevel") for base in mro)
+    except Exception:
+        return False
 
-    # Menu Bar
-    menubar = tk.Menu(root)
-    cad = tk.Menu(menubar, tearoff=0)
-    cad.add_command(label="Clientes", command=lambda: open_window(ClientesView, "Clientes"))
-    cad.add_command(label="Pedidos", command=lambda: open_window(PedidosView, "Pedidos"))
-    cad.add_command(label="Produtos", command=lambda: open_window(ProdutosFrame, "Produtos"))
-    menubar.add_cascade(label="Cadastros", menu=cad)
 
-    rel = tk.Menu(menubar, tearoff=0)
-    rel.add_command(label="Dashboard", command=lambda: open_window(DashboardFrame, "Dashboard"))
-    rel.add_command(label="Relatórios", command=lambda: open_window(ReportsFrame, "Relatórios"))
-    menubar.add_cascade(label="Relatórios", menu=rel)
+class App(ttk.Window):
+    def __init__(self, theme="darkly"):
+        super().__init__(themename=theme)
+        self.title("Santana imports - LTDA")
+        self.geometry("1100x700")
 
-    ia_menu = tk.Menu(menubar, tearoff=0)
-    ia_menu.add_command(label="IA / Análises", command=lambda: open_window(IAView, "IA / Análises"))
-    menubar.add_cascade(label="IA", menu=ia_menu)
+        # renomeado para evitar conflito com propriedade interna
+        self.app_style = Style(theme=theme)
 
-    menubar.add_command(label="Histórico", command=lambda: open_window(HistoryFrame, "Histórico"))
-    menubar.add_command(label="Sair", command=on_closing)
-    root.config(menu=menubar)
-
-    # inicia com Dashboard
-    DashboardFrame(root)
-
-    root.protocol("WM_DELETE_WINDOW", on_closing)
-    log_action("Start", "App")
-    root.mainloop()
-
-class App(tk.Tk):
-    def __init__(self):
-        super().__init__()
-        self.title("Sistema de Clientes, Pedidos e Produtos")
-        self.geometry("900x600")
-        self.configure(bg="#f2f2f2")
-
-        # ttk style
-        style = ttk.Style(self)
-        style.theme_use("clam")
-        style.configure("TFrame", background="#f2f2f2")
-        style.configure("TLabel", background="#f2f2f2", font=("Segoe UI", 10))
-        style.configure("TButton", padding=6, font=("Segoe UI", 10, "bold"))
-        style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"))
-        style.configure("Accent.TButton", background="#0078D7", foreground="white")
-
+        # menu
         self._build_menu()
-        self._build_main_frame()
+
+        # main area: abre o dashboard por padrão
+        self.container = ttk.Frame(self, padding=20)
+        self.container.pack(fill="both", expand=True)
+
+        self.dashboard = DashboardView(self.container)
 
     def _build_menu(self):
         menubar = tk.Menu(self)
         self.config(menu=menubar)
 
-        menu_cadastros = tk.Menu(menubar, tearoff=0)
-        menu_cadastros.add_command(label="Clientes", command=self.abrir_clientes)
-        menu_cadastros.add_command(label="Pedidos", command=self.abrir_pedidos)
-        menu_cadastros.add_command(label="Produtos", command=self.abrir_produtos)
-        menubar.add_cascade(label="Cadastros", menu=menu_cadastros)
+        menu_cad = tk.Menu(menubar, tearoff=0)
+        menu_cad.add_command(label="Dashboard", command=lambda: self.open_dashboard())
+        menu_cad.add_separator()
+        menu_cad.add_command(label="Clientes", command=lambda: self.open_view(ClientesView, "Clientes"))
+        menu_cad.add_command(label="Produtos", command=lambda: self.open_view(ProdutosView, "Produtos"))
+        menu_cad.add_command(label="Pedidos", command=lambda: self.open_view(PedidosView, "Pedidos"))
+        menubar.add_cascade(label="Cadastros", menu=menu_cad)
 
-        menubar.add_command(label="Sair", command=self.on_close)
+        menu_reports = tk.Menu(menubar, tearoff=0)
+        menu_reports.add_command(label="Relatórios", command=lambda: self.open_view(ReportsView, "Relatórios"))
+        menubar.add_cascade(label="Relatórios", menu=menu_reports)
 
-    def _build_main_frame(self):
-        frame = ttk.Frame(self, padding=20)
-        frame.pack(expand=True, fill="both")
+        menu_ia = tk.Menu(menubar, tearoff=0)
+        menu_ia.add_command(label="IA / Análises", command=lambda: self.open_view(IAView, "IA / Análises"))
+        menubar.add_cascade(label="IA", menu=menu_ia)
 
-        title = ttk.Label(frame, text="Bem-vindo ao Sistema", font=("Segoe UI", 16, "bold"))
-        title.pack(pady=30)
+        menubar.add_command(label="Histórico", command=lambda: self.open_view(HistoryView, "Histórico"))
 
-        ttk.Label(frame, text="Escolha uma opção no menu acima para começar.").pack(pady=10)
+        # Tema submenu
+        menu_theme = tk.Menu(menubar, tearoff=0)
+        menu_theme.add_command(label="Tema Escuro (darkly)", command=lambda: self.set_theme("darkly"))
+        menu_theme.add_command(label="Tema Claro (flatly)", command=lambda: self.set_theme("flatly"))
+        menubar.add_cascade(label="Tema", menu=menu_theme)
 
-    def abrir_clientes(self):
-        ClientesView(self)
+        menubar.add_command(label="Sair", command=self.on_exit)
 
-    def abrir_pedidos(self):
-        PedidosView(self)
+    def open_dashboard(self):
+        # remove antigo dashboard se existir e recria (frame)
+        for w in self.container.winfo_children():
+            w.destroy()
+        try:
+            self.dashboard = DashboardView(self.container)
+        except Exception:
+            # se for Toplevel, instanciar como janela separada
+            try:
+                DashboardView(self)
+            except Exception as e:
+                messagebox.showerror("Erro", f"Não foi possível abrir Dashboard: {e}")
 
-    def abrir_produtos(self):
-        ProdutosView(self)
+    def open_view(self, view_cls, title=""):
+        """
+        Abre uma view. Se view_cls for um Frame-like, coloca em Toplevel e instancia.
+        Se for um Toplevel-derived, instancia diretamente.
+        """
+        try:
+            if is_toplevel_class(view_cls):
+                # view é Toplevel-like: chama diretamente com parent = self
+                view_cls(self)
+            else:
+                # view é Frame-like: crie um Toplevel e coloque o Frame dentro
+                win = ttk.Toplevel(self)
+                win.title(title or getattr(view_cls, "__name__", "Janela"))
+                try:
+                    view_cls(win)  # frame que empacota dentro do Toplevel
+                except TypeError:
+                    # fallback: talvez a classe seja Toplevel mesmo
+                    try:
+                        view_cls(self)
+                    except Exception as e:
+                        messagebox.showerror("Erro", f"Falha ao abrir a view: {e}")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Falha ao abrir a view: {e}")
 
-    def on_close(self):
+    def set_theme(self, theme_name: str):
+        try:
+            self.app_style.theme_use(theme_name)
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível aplicar o tema: {e}")
+
+    def on_exit(self):
         if messagebox.askyesno("Sair", "Deseja realmente sair?"):
             self.destroy()
+
+
+if __name__ == "__main__":
+    # garante working dir no root do projeto (opcional)
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    app = App(theme="darkly")  # abre no tema escuro por padrão
+    app.mainloop()

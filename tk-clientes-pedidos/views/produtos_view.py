@@ -1,120 +1,147 @@
-import sys
-import os
+# views/produtos_view.py
+import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import ttkbootstrap as tb
+from tkinter import ttk
+from ttkbootstrap.constants import *
+from ttkbootstrap.constants import *
+from tkinter import messagebox, Toplevel
+from db import list_produtos, insert_produto, update_produto, delete_produto, get_produto
 
-import tkinter as tk
-from tkinter import ttk, messagebox
-from db import list_produtos, insert_produto, update_produto, delete_produto
 
-
-class ProdutosFrame(ttk.Frame):
+class ProdutosView(ttk.Frame):
     def __init__(self, master):
-        super().__init__(master)
-        self.pack(fill="both", expand=True)
+        super().__init__(master, padding=15)
+        self.pack(fill=BOTH, expand=True)
         self.create_widgets()
-        self.load_produtos()
+        self.carregar_produtos()
 
     def create_widgets(self):
-        top = ttk.Frame(self)
-        top.pack(fill="x", pady=6, padx=6)
-        ttk.Label(top, text="Buscar:").pack(side="left")
-        self.search_var = tk.StringVar()
-        ttk.Entry(top, textvariable=self.search_var).pack(side="left", padx=5)
-        ttk.Button(top, text="Buscar", command=self.load_produtos).pack(side="left", padx=5)
-        ttk.Button(top, text="Novo", command=self.on_new).pack(side="right", padx=5)
+        # 🔍 Barra de busca
+        frame_busca = ttk.Frame(self)
+        frame_busca.pack(fill=X, pady=10)
 
-        columns = ("id","nome","preco","estoque")
-        self.tree = ttk.Treeview(self, columns=columns, show="headings")
-        for col in columns:
-            self.tree.heading(col, text=col.title())
-        self.tree.column("id", width=40, anchor="center")
-        self.tree.pack(fill="both", expand=True, padx=6, pady=6)
+        ttk.Label(frame_busca, text="Buscar:").pack(side=LEFT, padx=5)
+        self.entry_busca = ttk.Entry(frame_busca)
+        self.entry_busca.pack(side=LEFT, fill=X, expand=True, padx=5)
+        ttk.Button(frame_busca, text="Pesquisar", bootstyle="info", command=self.carregar_produtos).pack(side=LEFT, padx=5)
 
-        btns = ttk.Frame(self)
-        btns.pack(fill="x", padx=6, pady=(0,6))
-        ttk.Button(btns, text="Editar", command=self.on_edit).pack(side="left")
-        ttk.Button(btns, text="Excluir", command=self.on_delete).pack(side="left", padx=5)
+        # 🧾 Treeview de produtos
+        self.tree = ttk.Treeview(self, columns=("id", "nome", "preco", "estoque"), show="headings", bootstyle="dark")
+        self.tree.pack(fill=BOTH, expand=True, pady=10)
 
-    def load_produtos(self):
-        for r in self.tree.get_children():
-            self.tree.delete(r)
-        q = self.search_var.get().strip()
-        rows = list_produtos(q)
-        for r in rows:
-            self.tree.insert("", "end", values=r)
+        self.tree.heading("id", text="ID")
+        self.tree.heading("nome", text="Nome")
+        self.tree.heading("preco", text="Preço (R$)")
+        self.tree.heading("estoque", text="Estoque")
 
-    def get_selected_id(self):
+        self.tree.column("id", width=40, anchor=CENTER)
+        self.tree.column("nome", width=200)
+        self.tree.column("preco", width=100, anchor=E)
+        self.tree.column("estoque", width=100, anchor=E)
+
+        # 🧩 Botões de ação
+        frame_botoes = ttk.Frame(self)
+        frame_botoes.pack(fill=X, pady=10)
+
+        ttk.Button(frame_botoes, text="Novo", bootstyle="success", command=self.novo_produto).pack(side=LEFT, padx=5)
+        ttk.Button(frame_botoes, text="Editar", bootstyle="warning", command=self.editar_produto).pack(side=LEFT, padx=5)
+        ttk.Button(frame_botoes, text="Excluir", bootstyle="danger", command=self.excluir_produto).pack(side=LEFT, padx=5)
+
+    def carregar_produtos(self):
+        filtro = self.entry_busca.get()
+        for i in self.tree.get_children():
+            self.tree.delete(i)
+
+        produtos = list_produtos(filtro)
+        for p in produtos:
+            self.tree.insert("", END, values=p)
+
+    def novo_produto(self):
+        ProdutoForm(self, self.carregar_produtos)
+
+    def editar_produto(self):
         sel = self.tree.selection()
         if not sel:
-            messagebox.showinfo("Aviso","Selecione um produto")
-            return None
-        return int(self.tree.item(sel[0])["values"][0])
+            messagebox.showwarning("Aviso", "Selecione um produto para editar.")
+            return
+        item = self.tree.item(sel[0])
+        produto_id = item["values"][0]
+        ProdutoForm(self, self.carregar_produtos, produto_id)
 
-    def on_new(self):
-        ProdutoForm(self, "novo")
+    def excluir_produto(self):
+        sel = self.tree.selection()
+        if not sel:
+            messagebox.showwarning("Aviso", "Selecione um produto para excluir.")
+            return
+        produto_id = self.tree.item(sel[0])["values"][0]
+        if messagebox.askyesno("Confirmação", "Deseja realmente excluir este produto?"):
+            delete_produto(produto_id)
+            self.carregar_produtos()
 
-    def on_edit(self):
-        pid = self.get_selected_id()
-        if pid:
-            ProdutoForm(self, "editar", pid)
 
-    def on_delete(self):
-        pid = self.get_selected_id()
-        if pid and messagebox.askyesno("Confirmar", "Excluir produto?"):
-            delete_produto(pid)
-            self.load_produtos()
-
-class ProdutoForm(tk.Toplevel):
-    def __init__(self, parent, modo, produto_id=None):
+class ProdutoForm(Toplevel):
+    def __init__(self, parent, on_save, produto_id=None):
         super().__init__(parent)
-        self.parent = parent
-        self.modo = modo
+        self.title("Cadastro de Produto")
+        self.geometry("400x280")
+        self.resizable(False, False)
         self.produto_id = produto_id
-        self.title("Produto")
-        self.geometry("300x200")
-        self.create_form()
-        if modo=="editar":
-            self.load_data()
+        self.on_save = on_save
 
-    def create_form(self):
-        pad={"padx":8,"pady":6}
-        tk.Label(self, text="Nome").grid(row=0,column=0,**pad,sticky="w")
-        self.nome_var = tk.StringVar()
-        tk.Entry(self,textvariable=self.nome_var).grid(row=0,column=1,**pad)
-        tk.Label(self, text="Preço").grid(row=1,column=0,**pad,sticky="w")
-        self.preco_var = tk.StringVar()
-        tk.Entry(self,textvariable=self.preco_var).grid(row=1,column=1,**pad)
-        tk.Label(self, text="Estoque").grid(row=2,column=0,**pad,sticky="w")
-        self.estoque_var = tk.StringVar()
-        tk.Entry(self,textvariable=self.estoque_var).grid(row=2,column=1,**pad)
-        frm_btn = tk.Frame(self)
-        frm_btn.grid(row=3,column=0,columnspan=2,pady=10)
-        tk.Button(frm_btn,text="Salvar",command=self.save).pack(side="left",padx=5)
-        tk.Button(frm_btn,text="Cancelar",command=self.destroy).pack(side="left",padx=5)
+        self.create_widgets()
 
-    def load_data(self):
-        p = list_produtos()
-        p = [x for x in p if x[0]==self.produto_id]
-        if p:
-            self.nome_var.set(p[0][1])
-            self.preco_var.set(p[0][2])
-            self.estoque_var.set(p[0][3])
+        if produto_id:
+            self.preencher_dados(produto_id)
 
-    def save(self):
-        nome = self.nome_var.get().strip()
+    def create_widgets(self):
+        frame_form = ttk.Labelframe(self, text="Informações do Produto", padding=15, bootstyle="dark")
+        frame_form.pack(fill=BOTH, expand=True, padx=10, pady=10)
+
+        ttk.Label(frame_form, text="Nome:").grid(row=0, column=0, sticky=W, pady=4)
+        self.entry_nome = ttk.Entry(frame_form)
+        self.entry_nome.grid(row=0, column=1, sticky=EW, pady=4)
+
+        ttk.Label(frame_form, text="Preço (R$):").grid(row=1, column=0, sticky=W, pady=4)
+        self.entry_preco = ttk.Entry(frame_form)
+        self.entry_preco.grid(row=1, column=1, sticky=EW, pady=4)
+
+        ttk.Label(frame_form, text="Estoque:").grid(row=2, column=0, sticky=W, pady=4)
+        self.entry_estoque = ttk.Entry(frame_form)
+        self.entry_estoque.grid(row=2, column=1, sticky=EW, pady=4)
+
+        frame_form.columnconfigure(1, weight=1)
+
+        ttk.Button(self, text="Salvar", bootstyle="success", command=self.salvar).pack(pady=10)
+
+    def preencher_dados(self, produto_id):
+        produto = get_produto(produto_id)
+        if produto:
+            self.entry_nome.insert(0, produto[1])
+            self.entry_preco.insert(0, produto[2])
+            self.entry_estoque.insert(0, produto[3])
+
+    def salvar(self):
+        nome = self.entry_nome.get().strip()
+        preco = self.entry_preco.get().strip()
+        estoque = self.entry_estoque.get().strip()
+
+        if not nome or not preco:
+            messagebox.showwarning("Atenção", "Preencha nome e preço.")
+            return
+
         try:
-            preco = float(self.preco_var.get())
-            estoque = int(self.estoque_var.get())
+            preco = float(preco)
+            estoque = int(estoque) if estoque else 0
         except ValueError:
-            messagebox.showerror("Erro","Preço ou estoque inválido")
+            messagebox.showerror("Erro", "Preço e estoque devem ser numéricos.")
             return
-        if not nome:
-            messagebox.showerror("Erro","Nome obrigatório")
-            return
-        if self.modo=="novo":
-            insert_produto(nome, preco, estoque)
-        else:
+
+        if self.produto_id:
             update_produto(self.produto_id, nome, preco, estoque)
-        self.parent.load_produtos()
+        else:
+            insert_produto(nome, preco, estoque)
+
+        self.on_save()
         self.destroy()

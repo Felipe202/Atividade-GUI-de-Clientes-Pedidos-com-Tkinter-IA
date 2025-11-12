@@ -1,114 +1,128 @@
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import tkinter as tk
-from tkinter import ttk, messagebox
+import ttkbootstrap as ttk
+from tkinter import messagebox
 from db import list_clientes, insert_cliente, update_cliente, delete_cliente
 
-class ClientesView(ttk.Frame):
+
+
+
+class ClientesView(ttk.Toplevel):
     def __init__(self, master):
         super().__init__(master)
-        self.pack(fill="both", expand=True)
-        self.create_widgets()
-        self.load_clientes()
+        self.title("Gerenciar Clientes")
+        self.geometry("700x500")
+        self.resizable(False, False)
 
-    def create_widgets(self):
-        top = ttk.Frame(self)
-        top.pack(fill="x", pady=6, padx=6)
-        ttk.Label(top, text="Buscar:").pack(side="left")
-        self.search_var = tk.StringVar()
-        ttk.Entry(top, textvariable=self.search_var).pack(side="left", padx=5)
-        ttk.Button(top, text="Buscar", command=self.load_clientes).pack(side="left", padx=5)
-        ttk.Button(top, text="Novo", command=self.on_new).pack(side="right", padx=5)
+        ttk.Label(self, text="Clientes", font=("Segoe UI", 16, "bold")).pack(pady=10)
 
-        columns = ("id","nome","email","telefone")
-        self.tree = ttk.Treeview(self, columns=columns, show="headings")
-        for col in columns:
-            self.tree.heading(col, text=col.title())
-        self.tree.column("id", width=40, anchor="center")
-        self.tree.pack(fill="both", expand=True, padx=6, pady=6)
+        # Frame de busca
+        frame_busca = ttk.Frame(self, padding=10)
+        frame_busca.pack(fill="x")
 
-        btns = ttk.Frame(self)
-        btns.pack(fill="x", padx=6, pady=(0,6))
-        ttk.Button(btns, text="Editar", command=self.on_edit).pack(side="left")
-        ttk.Button(btns, text="Excluir", command=self.on_delete).pack(side="left", padx=5)
+        ttk.Label(frame_busca, text="Buscar:").pack(side="left", padx=5)
+        self.entry_busca = ttk.Entry(frame_busca, width=40)
+        self.entry_busca.pack(side="left", padx=5)
+        ttk.Button(frame_busca, text="Pesquisar", bootstyle="info", command=self.buscar_clientes).pack(side="left", padx=5)
 
-    def load_clientes(self):
-        for r in self.tree.get_children():
-            self.tree.delete(r)
-        q = self.search_var.get().strip()
-        rows = list_clientes(q)
-        for r in rows:
-            self.tree.insert("", "end", values=r)
+        # Treeview
+        colunas = ("id", "nome", "email", "telefone")
+        self.tree = ttk.Treeview(self, columns=colunas, show="headings", bootstyle="dark")
+        for col in colunas:
+            self.tree.heading(col, text=col.capitalize())
+            self.tree.column(col, width=150, anchor="center")
 
-    def get_selected_id(self):
-        sel = self.tree.selection()
-        if not sel:
-            messagebox.showinfo("Aviso","Selecione um cliente")
-            return None
-        return int(self.tree.item(sel[0])["values"][0])
+        scroll = ttk.Scrollbar(self, command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scroll.set)
+        self.tree.pack(fill="both", expand=True, pady=10, padx=10)
+        scroll.pack(side="right", fill="y")
 
-    def on_new(self):
-        ClienteForm(self, "novo")
+        # Botões
+        frame_btns = ttk.Frame(self)
+        frame_btns.pack(pady=10)
+        ttk.Button(frame_btns, text="Novo", bootstyle="success", command=self.novo_cliente).pack(side="left", padx=5)
+        ttk.Button(frame_btns, text="Editar", bootstyle="warning", command=self.editar_cliente).pack(side="left", padx=5)
+        ttk.Button(frame_btns, text="Excluir", bootstyle="danger", command=self.excluir_cliente).pack(side="left", padx=5)
+        ttk.Button(frame_btns, text="Fechar", bootstyle="secondary", command=self.destroy).pack(side="left", padx=5)
 
-    def on_edit(self):
-        cid = self.get_selected_id()
-        if cid:
-            ClienteForm(self, "editar", cid)
+        self.carregar_clientes()
 
-    def on_delete(self):
-        cid = self.get_selected_id()
-        if cid and messagebox.askyesno("Confirmar", "Excluir cliente?"):
-            delete_cliente(cid)
-            self.load_clientes()
+    def carregar_clientes(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        for c in list_clientes():
+            self.tree.insert("", "end", values=c)
 
-class ClienteForm(tk.Toplevel):
-    def __init__(self, parent, modo, cliente_id=None):
-        super().__init__(parent)
-        self.parent = parent
+    def buscar_clientes(self):
+        termo = self.entry_busca.get().lower()
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        for c in list_clientes():
+            if termo in c[1].lower() or termo in c[2].lower():
+                self.tree.insert("", "end", values=c)
+
+    def novo_cliente(self):
+        ClienteForm(self, "novo", self.carregar_clientes)
+
+    def editar_cliente(self):
+        selecionado = self.tree.selection()
+        if not selecionado:
+            messagebox.showwarning("Aviso", "Selecione um cliente.")
+            return
+        cliente_id = self.tree.item(selecionado)["values"][0]
+        ClienteForm(self, "editar", self.carregar_clientes, cliente_id)
+
+    def excluir_cliente(self):
+        selecionado = self.tree.selection()
+        if not selecionado:
+            messagebox.showwarning("Aviso", "Selecione um cliente.")
+            return
+        cliente_id = self.tree.item(selecionado)["values"][0]
+        if messagebox.askyesno("Confirmar", "Deseja excluir este cliente?"):
+            delete_cliente(cliente_id)
+            self.carregar_clientes()
+
+
+class ClienteForm(ttk.Toplevel):
+    def __init__(self, master, modo, callback, cliente_id=None):
+        super().__init__(master)
+        self.title("Cadastro de Cliente")
+        self.geometry("400x300")
+        self.callback = callback
         self.modo = modo
         self.cliente_id = cliente_id
-        self.title("Cliente")
-        self.geometry("300x200")
-        self.create_form()
-        if modo=="editar":
-            self.load_data()
 
-    def create_form(self):
-        pad={"padx":8,"pady":6}
-        tk.Label(self, text="Nome").grid(row=0,column=0,**pad,sticky="w")
-        self.nome_var = tk.StringVar()
-        tk.Entry(self,textvariable=self.nome_var).grid(row=0,column=1,**pad)
-        tk.Label(self, text="Email").grid(row=1,column=0,**pad,sticky="w")
-        self.email_var = tk.StringVar()
-        tk.Entry(self,textvariable=self.email_var).grid(row=1,column=1,**pad)
-        tk.Label(self, text="Telefone").grid(row=2,column=0,**pad,sticky="w")
-        self.telefone_var = tk.StringVar()
-        tk.Entry(self,textvariable=self.telefone_var).grid(row=2,column=1,**pad)
-        frm_btn = tk.Frame(self)
-        frm_btn.grid(row=3,column=0,columnspan=2,pady=10)
-        tk.Button(frm_btn,text="Salvar",command=self.save).pack(side="left",padx=5)
-        tk.Button(frm_btn,text="Cancelar",command=self.destroy).pack(side="left",padx=5)
+        ttk.Label(self, text="Nome:").pack(pady=5)
+        self.nome = ttk.Entry(self, width=40)
+        self.nome.pack()
 
-    def load_data(self):
-        clientes = list_clientes()
-        c = [x for x in clientes if x[0]==self.cliente_id]
-        if c:
-            self.nome_var.set(c[0][1])
-            self.email_var.set(c[0][2])
-            self.telefone_var.set(c[0][3])
+        ttk.Label(self, text="Email:").pack(pady=5)
+        self.email = ttk.Entry(self, width=40)
+        self.email.pack()
 
-    def save(self):
-        nome = self.nome_var.get().strip()
-        email = self.email_var.get().strip()
-        telefone = self.telefone_var.get().strip()
+        ttk.Label(self, text="Telefone:").pack(pady=5)
+        self.telefone = ttk.Entry(self, width=40)
+        self.telefone.pack()
+
+        frame_btns = ttk.Frame(self)
+        frame_btns.pack(pady=15)
+        ttk.Button(frame_btns, text="Salvar", bootstyle="success", command=self.salvar).pack(side="left", padx=5)
+        ttk.Button(frame_btns, text="Cancelar", bootstyle="secondary", command=self.destroy).pack(side="left", padx=5)
+
+        if modo == "editar" and cliente_id:
+            cliente = get_cliente(cliente_id)
+            if cliente:
+                self.nome.insert(0, cliente[1])
+                self.email.insert(0, cliente[2])
+                self.telefone.insert(0, cliente[3])
+
+    def salvar(self):
+        nome, email, tel = self.nome.get(), self.email.get(), self.telefone.get()
         if not nome:
-            messagebox.showerror("Erro","Nome obrigatório")
+            messagebox.showerror("Erro", "Nome é obrigatório.")
             return
-        if self.modo=="novo":
-            insert_cliente(nome,email,telefone)
+        if self.modo == "novo":
+            insert_cliente(nome, email, tel)
         else:
-            update_cliente(self.cliente_id,nome,email,telefone)
-        self.parent.load_clientes()
+            update_cliente(self.cliente_id, nome, email, tel)
+        self.callback()
         self.destroy()
