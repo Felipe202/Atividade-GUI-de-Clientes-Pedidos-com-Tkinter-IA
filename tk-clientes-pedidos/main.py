@@ -1,4 +1,3 @@
-# main.py
 import os
 import tkinter as tk
 import ttkbootstrap as ttk
@@ -7,7 +6,6 @@ from tkinter import messagebox
 
 # inicializa DB (garanta que db.init_db exista)
 from db import create_tables as init_db
-
 
 # views (assumindo que os arquivos em views/ estejam com os nomes abaixo)
 from views.dashboard_view import DashboardView
@@ -47,7 +45,9 @@ class App(ttk.Window):
         self.container = ttk.Frame(self, padding=20)
         self.container.pack(fill="both", expand=True)
 
-        self.dashboard = DashboardView(self.container)
+        # Inicializa e salva a referência do dashboard
+        self.dashboard = None
+        self.open_dashboard()
 
     def _build_menu(self):
         menubar = tk.Menu(self)
@@ -58,7 +58,8 @@ class App(ttk.Window):
         menu_cad.add_separator()
         menu_cad.add_command(label="Clientes", command=lambda: self.open_view(ClientesView, "Clientes"))
         menu_cad.add_command(label="Produtos", command=lambda: self.open_view(ProdutosView, "Produtos"))
-        menu_cad.add_command(label="Pedidos", command=lambda: self.open_view(PedidosView, "Pedidos"))
+        # CHAMADA MODIFICADA: USANDO open_pedidos_view
+        menu_cad.add_command(label="Pedidos", command=lambda: self.open_pedidos_view())
         menubar.add_cascade(label="Cadastros", menu=menu_cad)
 
         menu_reports = tk.Menu(menubar, tearoff=0)
@@ -80,22 +81,45 @@ class App(ttk.Window):
         menubar.add_command(label="Sair", command=self.on_exit)
 
     def open_dashboard(self):
-        # remove antigo dashboard se existir e recria (frame)
+        """Abre o Dashboard no container principal e garante que a referência self.dashboard seja atualizada."""
+
+        # Remove a view atual do container
         for w in self.container.winfo_children():
             w.destroy()
+
         try:
-            self.dashboard = DashboardView(self.container)
-        except Exception:
-            # se for Toplevel, instanciar como janela separada
-            try:
-                DashboardView(self)
-            except Exception as e:
-                messagebox.showerror("Erro", f"Não foi possível abrir Dashboard: {e}")
+            # Cria a nova instância do DashboardView (que é um Frame)
+            new_dashboard = DashboardView(self.container)
+            new_dashboard.pack(fill="both", expand=True)
+
+            # ATUALIZA A REFERÊNCIA: ESSENCIAL PARA O CALLBACK EM open_pedidos_view
+            self.dashboard = new_dashboard
+
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível abrir Dashboard: {e}")
+
+    def open_pedidos_view(self):
+        """Abre PedidosView, injetando o método refresh do Dashboard."""
+
+        # Garante que o dashboard existe e possui o método refresh
+        if not self.dashboard or not hasattr(self.dashboard, 'refresh'):
+            messagebox.showwarning("Aviso", "O Dashboard não está pronto para receber atualizações.")
+            return
+
+        try:
+            # Obtém o método refresh do DashboardView
+            dashboard_refresh_func = self.dashboard.refresh
+
+            # Chama a PedidosView passando o callback (ela é Toplevel)
+            PedidosView(self, dashboard_callback=dashboard_refresh_func)
+
+        except Exception as e:
+            messagebox.showerror("Erro", f"Falha ao abrir Pedidos: {e}")
 
     def open_view(self, view_cls, title=""):
         """
         Abre uma view. Se view_cls for um Frame-like, coloca em Toplevel e instancia.
-        Se for um Toplevel-derived, instancia diretamente.
+        (Mantido como fallback para as outras views)
         """
         try:
             if is_toplevel_class(view_cls):

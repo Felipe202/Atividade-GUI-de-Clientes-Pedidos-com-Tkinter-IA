@@ -1,12 +1,31 @@
-# views/dashboard_view.py
 import sys, os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# O código abaixo é para garantir que a importação de 'db' funcione se o arquivo 'db.py' estiver em um diretório pai.
+# sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from tkinter import messagebox
 from db import list_clientes, list_pedidos
 import datetime
+
+
+def _is_pedido_deste_mes(pedido_data_str, ano, mes):
+    """Função auxiliar para validar data do pedido com segurança."""
+    # Ignora se não for string (ex: None ou outros tipos)
+    if not isinstance(pedido_data_str, str):
+        return False
+
+    try:
+        partes = pedido_data_str.split('-')
+        if len(partes) >= 2:
+            p_ano = int(partes[0])  # <--- Tenta converter o ano
+            p_mes = int(partes[1])  # <--- Tenta converter o mês
+            return p_ano == ano and p_mes == mes
+    except (ValueError, TypeError):
+        # Captura erros se int() falhar (ex: int('%f') ou int('abc'))
+        return False
+    return False
 
 
 class DashboardView(ttk.Frame):
@@ -58,6 +77,7 @@ class DashboardView(ttk.Frame):
         return card
 
     def refresh(self):
+        print("--- [DIAGNÓSTICO] Método Dashboard.refresh iniciado ---")  # LOG DE INÍCIO
         try:
             clientes = list_clientes()
             pedidos = list_pedidos()
@@ -66,19 +86,34 @@ class DashboardView(ttk.Frame):
             hoje = datetime.date.today()
             mes_atual, ano_atual = hoje.month, hoje.year
 
+            # Filtra pedidos do mês atual
             pedidos_mes = [
                 p
                 for p in pedidos
-                if int(p[2].split("-")[0]) == ano_atual
-                   and int(p[2].split("-")[1]) == mes_atual
+                if _is_pedido_deste_mes(p[3], ano_atual, mes_atual)  # Usando p[3] que é o índice da data
             ]
+
             total_pedidos_mes = len(pedidos_mes)
-            soma = sum(float(p[3]) for p in pedidos_mes) if pedidos_mes else 0.0
+
+            # Calcula a soma com segurança
+            soma = 0.0
+            for p in pedidos_mes:
+                try:
+                    # p[4] é o índice do total no retorno de list_pedidos (id, cliente_id, cliente_nome, data, total)
+                    soma += float(p[4])
+                except (ValueError, TypeError, IndexError):
+                    # Ignora o pedido se o valor for inválido
+                    pass
+
             ticket_medio = soma / total_pedidos_mes if total_pedidos_mes else 0.0
 
+            # Atualiza os valores na interface
             self.card_clientes.value_label.config(text=str(total_clients))
             self.card_pedidos.value_label.config(text=str(total_pedidos_mes))
             self.card_ticket.value_label.config(text=f"R$ {ticket_medio:.2f}")
 
+            print("--- [DIAGNÓSTICO] Dashboard.refresh concluído ---")  # LOG DE FIM
+
         except Exception as e:
-            messagebox.showerror("Erro", f"Não foi possível atualizar: {e}")
+            print(f"--- [ERRO DIAGNÓSTICO] Falha grave no Dashboard.refresh: {e} ---")  # LOG DE ERRO
+            messagebox.showerror("Erro", f"Não foi possível atualizar o Dashboard: {e}")

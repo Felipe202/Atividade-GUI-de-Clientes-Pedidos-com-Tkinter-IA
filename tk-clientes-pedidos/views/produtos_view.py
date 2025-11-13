@@ -3,10 +3,8 @@ import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import ttkbootstrap as tb
-from tkinter import ttk
+from tkinter import ttk, messagebox, Toplevel
 from ttkbootstrap.constants import *
-from ttkbootstrap.constants import *
-from tkinter import messagebox, Toplevel
 from db import list_produtos, insert_produto, update_produto, delete_produto, get_produto
 
 
@@ -54,7 +52,12 @@ class ProdutosView(ttk.Frame):
         for i in self.tree.get_children():
             self.tree.delete(i)
 
-        produtos = list_produtos(filtro)
+        try:
+            produtos = list_produtos(filtro)
+        except TypeError:
+            # caso list_produtos não aceite argumentos
+            produtos = list_produtos()
+
         for p in produtos:
             self.tree.insert("", END, values=p)
 
@@ -131,17 +134,27 @@ class ProdutoForm(Toplevel):
             messagebox.showwarning("Atenção", "Preencha nome e preço.")
             return
 
+        # valida preço e estoque
         try:
             preco = float(preco)
-            estoque = int(estoque) if estoque else 0
         except ValueError:
-            messagebox.showerror("Erro", "Preço e estoque devem ser numéricos.")
+            messagebox.showerror("Erro", "O campo preço deve conter apenas números (use ponto para decimais).")
             return
 
-        if self.produto_id:
-            update_produto(self.produto_id, nome, preco, estoque)
-        else:
-            insert_produto(nome, preco, estoque)
+        try:
+            estoque = int(estoque) if estoque else 0
+        except ValueError:
+            messagebox.showerror("Erro", "O campo estoque deve conter apenas números inteiros.")
+            return
 
-        self.on_save()
-        self.destroy()
+        # salva
+        try:
+            if self.produto_id:
+                update_produto(self.produto_id, nome, preco, estoque)
+            else:
+                insert_produto(nome, preco, estoque)
+
+            self.on_save()
+            self.destroy()
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível salvar: {e}")

@@ -2,21 +2,15 @@ import sqlite3
 
 DB_NAME = "app.db"
 
-# --------------------------------------------------
-# CONEXÃO
-# --------------------------------------------------
+
 def conectar():
     return sqlite3.connect(DB_NAME)
 
 
-# --------------------------------------------------
-# CRIAÇÃO DAS TABELAS
-# --------------------------------------------------
 def create_tables():
     conn = conectar()
     cur = conn.cursor()
 
-    # Clientes
     cur.execute("""
     CREATE TABLE IF NOT EXISTS clientes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,7 +20,6 @@ def create_tables():
     );
     """)
 
-    # Produtos (com campo estoque)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS produtos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,7 +29,6 @@ def create_tables():
     );
     """)
 
-    # Pedidos
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pedidos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,7 +39,6 @@ def create_tables():
     );
     """)
 
-    # Itens do pedido
     cur.execute("""
     CREATE TABLE IF NOT EXISTS itens_pedido (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,16 +55,14 @@ def create_tables():
     conn.close()
 
 
-# --------------------------------------------------
-# CLIENTES
-# --------------------------------------------------
+# ---------- CLIENTES ----------
 def list_clientes():
     conn = conectar()
     cur = conn.cursor()
     cur.execute("SELECT id, nome, email, telefone FROM clientes ORDER BY nome")
-    data = cur.fetchall()
+    rows = cur.fetchall()
     conn.close()
-    return data
+    return rows
 
 
 def insert_cliente(nome, email, telefone):
@@ -84,30 +73,39 @@ def insert_cliente(nome, email, telefone):
     conn.close()
 
 
-def update_cliente(id_cliente, nome, email, telefone):
-    conn = conectar()
-    cur = conn.cursor()
-    cur.execute("""
-        UPDATE clientes
-        SET nome = ?, email = ?, telefone = ?
-        WHERE id = ?
-    """, (nome, email, telefone, id_cliente))
-    conn.commit()
-    conn.close()
+def update_cliente(cliente_id, nome, email, telefone):
+    conn = sqlite3.connect("app.db")
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE clientes SET nome=?, email=?, telefone=? WHERE id=?",
+            (nome, email, telefone, cliente_id)
+        )
+        conn.commit()
+        return True
+    except Exception as e:
+        print("Erro ao atualizar cliente:", e)
+        return False
+    finally:
+        conn.close()
 
 
-def delete_cliente(id_cliente):
-    conn = conectar()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM clientes WHERE id = ?", (id_cliente,))
-    conn.commit()
-    conn.close()
+def delete_cliente(cliente_id):
+    conn = sqlite3.connect("app.db")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM clientes WHERE id=?", (cliente_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        print("Erro ao deletar cliente:", e)
+        return False
+    finally:
+        conn.close()
 
 
-# --------------------------------------------------
-# PRODUTOS
-# --------------------------------------------------
-def insert_produto(nome, preco, estoque):
+# ---------- PRODUTOS ----------
+def insert_produto(nome, preco, estoque=0):
     conn = conectar()
     cur = conn.cursor()
     cur.execute("INSERT INTO produtos (nome, preco, estoque) VALUES (?, ?, ?)", (nome, preco, estoque))
@@ -115,11 +113,19 @@ def insert_produto(nome, preco, estoque):
     conn.close()
 
 
-def list_produtos(*args):
-    conn = conectar()
-    cur = conn.cursor()
-    cur.execute("SELECT id, nome, preco, estoque FROM produtos ORDER BY nome")
-    rows = cur.fetchall()
+def list_produtos(filtro=""):
+    conn = sqlite3.connect("app.db")
+    cursor = conn.cursor()
+
+    if filtro:
+        cursor.execute(
+            "SELECT id, nome, preco, estoque FROM produtos WHERE nome LIKE ? ORDER BY nome",
+            (f"%{filtro}%",),
+        )
+    else:
+        cursor.execute("SELECT id, nome, preco, estoque FROM produtos ORDER BY nome")
+
+    rows = cursor.fetchall()
     conn.close()
     return rows
 
@@ -143,29 +149,29 @@ def delete_produto(id_produto):
 def get_produto(id_produto):
     conn = conectar()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM produtos WHERE id = ?", (id_produto,))
-    produto = cur.fetchone()
+    cur.execute("SELECT id, nome, preco, estoque FROM produtos WHERE id = ?", (id_produto,))
+    row = cur.fetchone()
     conn.close()
-    return produto
+    return row
 
 
-# --------------------------------------------------
-# PEDIDOS
-# --------------------------------------------------
-def insert_pedido(cliente_nome, data, total):
+# ---------- PEDIDOS ----------
+def insert_pedido(cliente_id, data, total):
     conn = conectar()
     cur = conn.cursor()
-
-    # Busca o ID do cliente pelo nome
-    cur.execute("SELECT id FROM clientes WHERE nome = ?", (cliente_nome,))
-    cliente = cur.fetchone()
-    if not cliente:
-        raise Exception("Cliente não encontrado.")
-    cliente_id = cliente[0]
+    # aceita cliente_id numérico ou nome (tenta resolver nome -> id)
+    try:
+        cliente_id = int(cliente_id)
+    except Exception:
+        cur.execute("SELECT id FROM clientes WHERE nome = ?", (cliente_id,))
+        r = cur.fetchone()
+        if r:
+            cliente_id = r[0]
+        else:
+            raise ValueError(f"Cliente '{cliente_id}' não encontrado.")
 
     cur.execute("INSERT INTO pedidos (cliente_id, data, total) VALUES (?, ?, ?)", (cliente_id, data, total))
     pedido_id = cur.lastrowid
-
     conn.commit()
     conn.close()
     return pedido_id
@@ -175,36 +181,118 @@ def insert_item_pedido(pedido_id, produto, quantidade, preco_unit):
     subtotal = float(quantidade) * float(preco_unit)
     conn = conectar()
     cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO itens_pedido (pedido_id, produto, quantidade, preco_unit, subtotal)
-        VALUES (?, ?, ?, ?, ?)
-    """, (pedido_id, produto, quantidade, preco_unit, subtotal))
+    cur.execute(
+        "INSERT INTO itens_pedido (pedido_id, produto, quantidade, preco_unit, subtotal) VALUES (?, ?, ?, ?, ?)",
+        (pedido_id, produto, quantidade, preco_unit, subtotal)
+    )
     conn.commit()
     conn.close()
-
-
-def list_pedidos():
-    conn = conectar()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT p.id, c.nome AS cliente, p.data, p.total
-        FROM pedidos p
-        JOIN clientes c ON c.id = p.cliente_id
-        ORDER BY p.id DESC
-    """)
-    data = cur.fetchall()
-    conn.close()
-    return data
 
 
 def get_itens_pedido(pedido_id):
     conn = conectar()
     cur = conn.cursor()
-    cur.execute("""
-        SELECT produto, quantidade, preco_unit, subtotal
-        FROM itens_pedido
-        WHERE pedido_id = ?
-    """, (pedido_id,))
-    data = cur.fetchall()
+    cur.execute("SELECT id, produto, quantidade, preco_unit, subtotal FROM itens_pedido WHERE pedido_id = ?",
+                (pedido_id,))
+    rows = cur.fetchall()
     conn.close()
-    return data
+    return rows
+
+
+def list_pedidos():
+    """
+    Retorna lista de tuplas padronizadas, ORDENADAS PELA DATA (mais recente primeiro):
+    (id, cliente_id, cliente_nome, data, total)
+    """
+    conn = conectar()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT 
+            p.id, 
+            p.cliente_id, 
+            COALESCE(c.nome, ''), 
+            p.data, 
+            p.total
+        FROM pedidos p
+        LEFT JOIN clientes c ON c.id = p.cliente_id
+        ORDER BY p.data DESC, p.id DESC
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
+def get_pedidos_detalhados():
+    """
+    Retorna uma lista de dicionários, onde cada dicionário contém o resumo do pedido
+    e uma lista de seus itens. Útil para relatórios.
+
+    Estrutura:
+    [
+        {
+            'id': 1,
+            'cliente_nome': 'Cliente A',
+            'data': '2025-01-01',
+            'total': 150.00,
+            'itens': [
+                {'produto': 'Produto X', 'quantidade': 10, 'preco_unit': 10.0, 'subtotal': 100.0},
+                {'produto': 'Produto Y', 'quantidade': 5, 'preco_unit': 10.0, 'subtotal': 50.0},
+            ]
+        },
+        ...
+    ]
+    """
+    conn = conectar()
+    cur = conn.cursor()
+
+    # Consulta que retorna todos os pedidos (ordenados) e seus itens em uma única lista grande
+    cur.execute("""
+        SELECT 
+            p.id, COALESCE(c.nome, ''), p.data, p.total, 
+            ip.produto, ip.quantidade, ip.preco_unit, ip.subtotal
+        FROM pedidos p
+        LEFT JOIN clientes c ON c.id = p.cliente_id
+        JOIN itens_pedido ip ON ip.pedido_id = p.id
+        ORDER BY p.data DESC, p.id DESC
+    """)
+
+    rows = cur.fetchall()
+    conn.close()
+
+    pedidos_map = {}
+
+    # Processa as linhas e agrupa os itens pelo ID do pedido
+    for row in rows:
+        (pedido_id, cliente_nome, data, total,
+         produto, quantidade, preco_unit, subtotal) = row
+
+        if pedido_id not in pedidos_map:
+            # Cria o registro do pedido principal se ainda não existir
+            pedidos_map[pedido_id] = {
+                'id': pedido_id,
+                'cliente_nome': cliente_nome,
+                'data': data,
+                'total': total,
+                'itens': []
+            }
+
+        # Adiciona o item ao pedido
+        pedidos_map[pedido_id]['itens'].append({
+            'produto': produto,
+            'quantidade': quantidade,
+            'preco_unit': preco_unit,
+            'subtotal': subtotal
+        })
+
+    # Converte o mapa de volta para uma lista de pedidos ordenados
+    return list(pedidos_map.values())
+
+
+# utilitário de debug
+def debug_list_clientes():
+    conn = conectar()
+    cur = conn.cursor()
+    cur.execute("SELECT id, nome FROM clientes ORDER BY id")
+    rows = cur.fetchall()
+    conn.close()
+    return rows

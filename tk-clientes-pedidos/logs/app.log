@@ -1,0 +1,5 @@
+2025-11-12 22:45:46,256 INFO Analyze Pedidos id=None provider=openai
+2025-11-13 00:23:21,536 INFO Analyze Pedidos id=None provider=openai
+2025-11-13 01:01:55,229 INFO Analyze Pedidos id=None provider=none
+2025-11-13 01:01:58,955 INFO Analyze Pedidos id=None provider=openai
+2025-11-13 01:02:01,848 INFO Analyze Pedidos id=None provider=ollama

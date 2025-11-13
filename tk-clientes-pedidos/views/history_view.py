@@ -65,16 +65,18 @@ class HistoryView(ttk.Frame):
         try:
             filtro = self.search_entry.get().lower().strip()
             pedidos = list_pedidos()
-            clientes = {c[0]: c[1] for c in list_clientes()}
 
             for i in self.tree.get_children():
                 self.tree.delete(i)
 
             for p in pedidos:
-                pid, cid, _, data, total = p
-                nome_cliente = clientes.get(cid, "—")
+                # CORRIGIDO: Adicionando a variável de placeholder para p.cliente_id
+                pid, _, nome_cliente, data, total = p
+
                 if filtro and filtro not in nome_cliente.lower():
                     continue
+
+                # Note que a ordem das colunas no Treeview é: id, cliente, data, total
                 self.tree.insert("", "end", values=(pid, nome_cliente, data, f"{total:.2f}"))
         except Exception as e:
             messagebox.showerror("Erro", f"Falha ao carregar histórico: {e}")
@@ -102,19 +104,36 @@ class HistoryView(ttk.Frame):
 
         tree = ttk.Treeview(
             popup,
-            columns=("produto", "quantidade", "preco_unit"),
+            columns=("produto", "quantidade", "preco_unit", "subtotal"),
             show="headings",
             bootstyle="dark",
         )
         tree.pack(fill=BOTH, expand=True, padx=10, pady=10)
 
+        # cabeçalhos
         for col, text in zip(
-            ("produto", "quantidade", "preco_unit"),
-            ["Produto", "Qtd", "Preço Unitário (R$)"],
+                ("produto", "quantidade", "preco_unit", "subtotal"),
+                ["Produto", "Qtd", "Preço Unitário (R$)", "Subtotal (R$)"],
         ):
             tree.heading(col, text=text)
-            tree.column(col, width=150)
+            tree.column(col, width=120)
 
+        # inserir linhas — espera que get_itens_pedido retorne (produto, quantidade, preco_unit, subtotal)
         for item in itens:
-            _, produto, qtd, preco = item
-            tree.insert("", "end", values=(produto, qtd, f"{preco:.2f}"))
+            # proteger contra formatos diferentes (len variável)
+            if len(item) == 4:
+                produto, qtd, preco, subtotal = item
+            elif len(item) == 5:
+                # caso retorne id primeiro: (id, produto, qtd, preco, subtotal)
+                _, produto, qtd, preco, subtotal = item
+            elif len(item) == 3:
+                # caso retorne sem subtotal: (produto, qtd, preco)
+                produto, qtd, preco = item
+                subtotal = float(qtd) * float(preco)
+            else:
+                # fallback: transformar todos em string e mostrar
+                tree.insert("", "end", values=tuple(map(str, item)))
+                continue
+
+            tree.insert("", "end", values=(produto, qtd, f"{float(preco):.2f}", f"{float(subtotal):.2f}"))
+
