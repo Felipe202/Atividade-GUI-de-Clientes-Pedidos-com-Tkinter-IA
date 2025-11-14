@@ -1,3 +1,4 @@
+cd tk-clientes-pedidos
 pip install -r requirements.txt
 
 pip install reportlab
@@ -7,4 +8,3 @@ pip install ttkthemes
 pip install ttkbootstrap
 
 pip install pillow
-

@@ -74,9 +74,9 @@ class App(ttk.Window):
 
         # Tema submenu
         menu_theme = tk.Menu(menubar, tearoff=0)
-        menu_theme.add_command(label="Tema Escuro (darkly)", command=lambda: self.set_theme("darkly"))
-        menu_theme.add_command(label="Tema Claro (flatly)", command=lambda: self.set_theme("flatly"))
-        menubar.add_cascade(label="Tema", menu=menu_theme)
+        menu_theme.add_command(label="Modo Escuro", command=lambda: self.set_theme("darkly"))
+        menu_theme.add_command(label="Modo Claro", command=lambda: self.set_theme("flatly"))
+        menubar.add_cascade(label="Modo", menu=menu_theme)
 
         menubar.add_command(label="Sair", command=self.on_exit)
 
@@ -144,7 +144,7 @@ class App(ttk.Window):
         try:
             self.app_style.theme_use(theme_name)
         except Exception as e:
-            messagebox.showerror("Erro", f"Não foi possível aplicar o tema: {e}")
+            messagebox.showerror("Erro", f"Não foi possível aplicar o modo: {e}")
 
     def on_exit(self):
         if messagebox.askyesno("Sair", "Deseja realmente sair?"):
