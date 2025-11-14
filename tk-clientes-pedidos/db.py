@@ -4,7 +4,10 @@ DB_NAME = "app.db"
 
 
 def conectar():
-    return sqlite3.connect(DB_NAME)
+    # Define o row_factory para facilitar o acesso aos resultados, se necessário
+    conn = sqlite3.connect(DB_NAME)
+    # conn.row_factory = sqlite3.Row # Removido para manter a compatibilidade com o código existente que usa tuplas
+    return conn
 
 
 def create_tables():
@@ -12,44 +15,118 @@ def create_tables():
     cur = conn.cursor()
 
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS clientes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nome TEXT NOT NULL,
-        email TEXT,
-        telefone TEXT
-    );
-    """)
+                CREATE TABLE IF NOT EXISTS clientes
+                (
+                    id
+                    INTEGER
+                    PRIMARY
+                    KEY
+                    AUTOINCREMENT,
+                    nome
+                    TEXT
+                    NOT
+                    NULL,
+                    email
+                    TEXT,
+                    telefone
+                    TEXT
+                );
+                """)
 
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS produtos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nome TEXT NOT NULL,
-        preco REAL NOT NULL,
-        estoque INTEGER DEFAULT 0
-    );
-    """)
+                CREATE TABLE IF NOT EXISTS produtos
+                (
+                    id
+                    INTEGER
+                    PRIMARY
+                    KEY
+                    AUTOINCREMENT,
+                    nome
+                    TEXT
+                    NOT
+                    NULL,
+                    preco
+                    REAL
+                    NOT
+                    NULL,
+                    estoque
+                    INTEGER
+                    DEFAULT
+                    0
+                );
+                """)
 
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS pedidos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        cliente_id INTEGER NOT NULL,
-        data TEXT NOT NULL,
-        total REAL NOT NULL,
-        FOREIGN KEY (cliente_id) REFERENCES clientes(id)
-    );
-    """)
+                CREATE TABLE IF NOT EXISTS pedidos
+                (
+                    id
+                    INTEGER
+                    PRIMARY
+                    KEY
+                    AUTOINCREMENT,
+                    cliente_id
+                    INTEGER
+                    NOT
+                    NULL,
+                    data
+                    TEXT
+                    NOT
+                    NULL,
+                    total
+                    REAL
+                    NOT
+                    NULL,
+                    FOREIGN
+                    KEY
+                (
+                    cliente_id
+                ) REFERENCES clientes
+                (
+                    id
+                )
+                    );
+                """)
 
+    # NOTA: O nome da coluna 'produto' em itens_pedido é um TEXT, o que indica que está salvando o nome do produto,
+    # e não um FOREIGN KEY. Mantendo o design original.
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS itens_pedido (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        pedido_id INTEGER NOT NULL,
-        produto TEXT NOT NULL,
-        quantidade REAL NOT NULL,
-        preco_unit REAL NOT NULL,
-        subtotal REAL NOT NULL,
-        FOREIGN KEY (pedido_id) REFERENCES pedidos(id)
-    );
-    """)
+                CREATE TABLE IF NOT EXISTS itens_pedido
+                (
+                    id
+                    INTEGER
+                    PRIMARY
+                    KEY
+                    AUTOINCREMENT,
+                    pedido_id
+                    INTEGER
+                    NOT
+                    NULL,
+                    produto
+                    TEXT
+                    NOT
+                    NULL,
+                    quantidade
+                    REAL
+                    NOT
+                    NULL,
+                    preco_unit
+                    REAL
+                    NOT
+                    NULL,
+                    subtotal
+                    REAL
+                    NOT
+                    NULL,
+                    FOREIGN
+                    KEY
+                (
+                    pedido_id
+                ) REFERENCES pedidos
+                (
+                    id
+                ) ON DELETE CASCADE
+                    );
+                """)
 
     conn.commit()
     conn.close()
@@ -207,19 +284,46 @@ def list_pedidos():
     conn = conectar()
     cur = conn.cursor()
     cur.execute("""
-        SELECT 
-            p.id, 
-            p.cliente_id, 
-            COALESCE(c.nome, ''), 
-            p.data, 
-            p.total
-        FROM pedidos p
-        LEFT JOIN clientes c ON c.id = p.cliente_id
-        ORDER BY p.data DESC, p.id DESC
-    """)
+                SELECT p.id,
+                       p.cliente_id,
+                       COALESCE(c.nome, ''),
+                       p.data,
+                       p.total
+                FROM pedidos p
+                         LEFT JOIN clientes c ON c.id = p.cliente_id
+                ORDER BY p.data DESC, p.id DESC
+                """)
     rows = cur.fetchall()
     conn.close()
     return rows
+
+
+# --- FUNÇÃO NOVA ---
+def delete_pedido(pedido_id):
+    """
+    Remove um pedido e seus itens associados.
+    A exclusão é feita em cascata (primeiro itens, depois o pedido).
+    """
+    conn = conectar()
+    cur = conn.cursor()
+    try:
+        # 1. Exclui os itens associados ao pedido
+        cur.execute("DELETE FROM itens_pedido WHERE pedido_id = ?", (pedido_id,))
+
+        # 2. Exclui o pedido principal
+        cur.execute("DELETE FROM pedidos WHERE id = ?", (pedido_id,))
+
+        conn.commit()
+        return True
+    except sqlite3.Error as e:
+        conn.rollback()
+        print(f"Erro ao deletar pedido {pedido_id}: {e}")
+        raise e
+    finally:
+        conn.close()
+
+
+# --- FIM FUNÇÃO NOVA ---
 
 
 def get_pedidos_detalhados():
@@ -247,14 +351,19 @@ def get_pedidos_detalhados():
 
     # Consulta que retorna todos os pedidos (ordenados) e seus itens em uma única lista grande
     cur.execute("""
-        SELECT 
-            p.id, COALESCE(c.nome, ''), p.data, p.total, 
-            ip.produto, ip.quantidade, ip.preco_unit, ip.subtotal
-        FROM pedidos p
-        LEFT JOIN clientes c ON c.id = p.cliente_id
-        JOIN itens_pedido ip ON ip.pedido_id = p.id
-        ORDER BY p.data DESC, p.id DESC
-    """)
+                SELECT p.id,
+                       COALESCE(c.nome, ''),
+                       p.data,
+                       p.total,
+                       ip.produto,
+                       ip.quantidade,
+                       ip.preco_unit,
+                       ip.subtotal
+                FROM pedidos p
+                         LEFT JOIN clientes c ON c.id = p.cliente_id
+                         JOIN itens_pedido ip ON ip.pedido_id = p.id
+                ORDER BY p.data DESC, p.id DESC
+                """)
 
     rows = cur.fetchall()
     conn.close()
@@ -296,3 +405,6 @@ def debug_list_clientes():
     rows = cur.fetchall()
     conn.close()
     return rows
+
+
+create_tables()  # Chamada para criar as tabelas na inicialização
