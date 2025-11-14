@@ -227,8 +227,9 @@ class ReportsView(ttk.Frame):
             return
 
         try:
+            # CORREÇÃO: Usar 'delimiter=;'' para melhor compatibilidade com o Excel em Pt-Br
             with open(arquivo, "w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
+                writer = csv.writer(f, delimiter=';')
                 writer.writerow(colunas)
                 writer.writerows(dados)
             messagebox.showinfo("Sucesso", f"Relatório exportado para:\n{arquivo}")
@@ -273,18 +274,14 @@ class ReportsView(ttk.Frame):
             largura, altura = A4
             y = altura - 80
 
-            # Adiciona as larguras das colunas para calcular as posições X
-            # Pedidos (7 colunas): ID, Cliente, Data, Produto, Qtd, Preço Unit., Total
-            # Índice:               0,  1,        2,    3,       4,   5,            6
-
             # Posições X onde cada coluna começa (após a margem de 50)
             col_starts = [50]
             for width in col_widths:
                 col_starts.append(col_starts[-1] + width)
 
             # col_starts[0] é a margem de 50
-            # col_starts[6] é o início do Preço Unit.
-            # col_starts[7] é o início do Total
+            # col_starts[5] é o início do Preço Unit.
+            # col_starts[6] é o início do Total
 
             def desenhar_cabecalho(y, titulo, col_nomes):
                 c.setFont("Helvetica-Bold", 16)
@@ -334,10 +331,6 @@ class ReportsView(ttk.Frame):
                         # Preço Unitário (coluna 5)
                         preco_unit_formatado = f"R$ {float(item['preco_unit']):.2f}"
                         c.drawString(col_starts[5], y, preco_unit_formatado)
-
-                        # 3. SUBTOTAL REMOVIDO: Nenhuma instrução para desenhar na coluna 6
-
-                        # O Total do Pedido (coluna 7 no layout antigo, agora coluna 6) permanece vazio para os itens.
 
                         y -= 12  # Espaçamento menor para itens
 
